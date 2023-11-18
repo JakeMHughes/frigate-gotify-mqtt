@@ -9,16 +9,17 @@ DOCKER_RUN=docker run --rm -v "$$PWD/.:${DOCKER_WORKDIR}" -v "`go env GOPATH`/pk
 DOCKER_GO_BUILD=go build -mod=readonly -a -installsuffix cgo -ldflags "$$LD_FLAGS" -buildmode=plugin
 
 download-tools:
-	go install github.com/gotify/plugin-api/cmd/gomod-cap@latest
+	# go install github.com/gotify/plugin-api/cmd/gomod-cap@latest
+	# GO111MODULE=off go get -u github.com/gotify/plugin-api/cmd/gomod-cap
 
 create-build-dir:
 	mkdir -p ${BUILDDIR} || true
 
 update-go-mod: create-build-dir download-tools
 	wget -O ${BUILDDIR}/gotify-server.mod https://raw.githubusercontent.com/gotify/server/${GOTIFY_VERSION}/go.mod
-	gomod-cap -from ${BUILDDIR}/gotify-server.mod -to go.mod
+	go run github.com/gotify/plugin-api/cmd/gomod-cap -from ${BUILDDIR}/gotify-server.mod -to go.mod
 	rm ${BUILDDIR}/gotify-server.mod || true
-	go mod edit -require=github.com/gotify/server$(shell echo "/${GOTIFY_VERSION}" | egrep -o "^/v[2-9][0-9]*")@${GOTIFY_VERSION}
+	#go mod edit -require=github.com/gotify/server$(shell echo "/${GOTIFY_VERSION}" | egrep -o "^/v[2-9][0-9]*")@${GOTIFY_VERSION}
 	go mod tidy
 
 get-gotify-server-go-version: create-build-dir
@@ -34,6 +35,6 @@ build-linux-arm-7: get-gotify-server-go-version update-go-mod
 build-linux-arm64: get-gotify-server-go-version update-go-mod
 	${DOCKER_RUN} ${DOCKER_BUILD_IMAGE}:$(GO_VERSION)-linux-arm64 ${DOCKER_GO_BUILD} -o ${BUILDDIR}/${PLUGIN_NAME}-linux-arm64${FILE_SUFFIX}.so ${DOCKER_WORKDIR}
 
-build: build-linux-arm-7 build-linux-amd64 build-linux-arm64
+build: build-linux-amd64
 
 .PHONY: build

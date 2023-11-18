@@ -5,6 +5,8 @@ import (
 	"errors"
 	"math/rand"
 	"time"
+	"log"
+	"strings"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/gotify/plugin-api"
@@ -152,20 +154,103 @@ func (p *Plugin) connectClients() error {
 	return nil
 }
 
+//example paylad body from frigate/events
+//{
+//   "type": "update", // new, update, end
+//   "before": {
+//     "id": "1607123955.475377-mxklsc",
+//     "camera": "front_door",
+//     "frame_time": 1607123961.837752,
+//     "snapshot_time": 1607123961.837752,
+//     "label": "person",
+//     "sub_label": null,
+//     "top_score": 0.958984375,
+//     "false_positive": false,
+//     "start_time": 1607123955.475377,
+//     "end_time": null,
+//     "score": 0.7890625,
+//     "box": [424, 500, 536, 712],
+//     "area": 23744,
+//     "ratio": 2.113207,
+//     "region": [264, 450, 667, 853],
+//     "current_zones": ["driveway"],
+//     "entered_zones": ["yard", "driveway"],
+//     "thumbnail": null,
+//     "has_snapshot": false,
+//     "has_clip": false,
+//     "stationary": false, // whether or not the object is considered stationary
+//     "motionless_count": 0, // number of frames the object has been motionless
+//     "position_changes": 2 // number of times the object has moved from a stationary position
+//   },
+//   "after": {
+//     "id": "1607123955.475377-mxklsc",
+//     "camera": "front_door",
+//     "frame_time": 1607123962.082975,
+//     "snapshot_time": 1607123961.837752,
+//     "label": "person",
+//     "sub_label": null,
+//     "top_score": 0.958984375,
+//     "false_positive": false,
+//     "start_time": 1607123955.475377,
+//     "end_time": null,
+//     "score": 0.87890625,
+//     "box": [432, 496, 544, 854],
+//     "area": 40096,
+//     "ratio": 1.251397,
+//     "region": [218, 440, 693, 915],
+//     "current_zones": ["yard", "driveway"],
+//     "entered_zones": ["yard", "driveway"],
+//     "thumbnail": null,
+//     "has_snapshot": false,
+//     "has_clip": false,
+//     "stationary": false, // whether or not the object is considered stationary
+//     "motionless_count": 0, // number of frames the object has been motionless
+//     "position_changes": 2 // number of times the object has changed position
+//   }
+// }
 // handleMessage handles mqtt messages from the client by returning a MessageHandler
 // Messages are in either JSON format (same as the Gotify API) or simply a string.
 func (p *Plugin) handleMessage(client mqtt.Client, message mqtt.Message) {
 	payload := message.Payload()
 
-	var outgoingMessage plugin.Message
+	log.Printf("Processing Payload %s", payload)
 
-	if payload[0] == '{' {
-		if err := json.Unmarshal(payload, &outgoingMessage); err != nil {
-			return
-		}
-	} else {
-		outgoingMessage.Message = string(payload)
+	var data map[string]interface{}
+
+	if err := json.Unmarshal(payload, &data); err != nil {
+		log.Printf("Invalid JSON format")
+		return
 	}
+
+	if data["type"].(string) != "new" {
+		log.Printf("Got invalid type")
+		return
+	}
+
+	before := data["before"].(map[string]interface{})
+	if before["camera"] == nil || before["label"] == nil {
+		log.Printf("Got nil for camera or label")
+		return
+	}
+
+	gotifyNotification := "{\"title\":\"" + strings.Title(before["label"].(string)) + " detected in " + before["camera"].(string) + "\",\"priority\":5}"
+
+	log.Printf("Sending Msg %s", gotifyNotification)
+
+	var outgoingMessage plugin.Message
+	if err := json.Unmarshal([]byte(gotifyNotification), &outgoingMessage); err != nil {
+		return
+	}
+
+	// if payload[0] == '{' {
+	// 	if err := json.Unmarshal(payload, &outgoingMessage); err != nil {
+	// 		return
+	// 	}
+	// } else {
+	// 	outgoingMessage.Message = string(payload)
+	// }
+
+	//outgoingMessage.Message = gotifyNotification
 
 	p.msgHandler.SendMessage(outgoingMessage)
 }
